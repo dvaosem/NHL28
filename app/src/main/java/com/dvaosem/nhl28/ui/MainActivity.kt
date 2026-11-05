@@ -1,11 +1,17 @@
 package com.dvaosem.nhl28.ui
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.ProgressDialog
 import android.content.Intent
 import android.graphics.Bitmap
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
@@ -18,9 +24,14 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import com.dvaosem.nhl28.R
+import com.google.firebase.FirebaseApp
+import com.google.firebase.messaging.FirebaseMessaging
+import org.json.JSONObject
 
 /**
  * Thin WebView shell around https://dvaosem.com/nhl/.
@@ -48,6 +59,41 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface fun checkUpdate() { ui.post { checkForUpdate(true) } }
         /** The page's own update bar calls this; the GitHub check handles the actual download. */
         @JavascriptInterface fun update(url: String) { ui.post { checkForUpdate(true) } }
+
+        // --- native push (the page uses these instead of web push) ---
+        @JavascriptInterface fun pushAvailable(): Boolean =
+            try { FirebaseApp.getApps(this@MainActivity).isNotEmpty() } catch (_: Exception) { false }
+
+        @JavascriptInterface fun notifPermission(): String = permState()
+
+        /** Result comes back through window.__nhlPermResult('granted' | 'denied'). */
+        @JavascriptInterface fun requestNotifPermission() {
+            ui.post {
+                when (permState()) {
+                    "granted" -> sendPerm("granted")
+                    "denied" -> {
+                        // Android won't show the dialog again: send the user to the app's notification settings
+                        try {
+                            startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+                        } catch (_: Exception) {}
+                        sendPerm("denied")
+                    }
+                    else -> if (Build.VERSION.SDK_INT >= 33) permLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) else sendPerm(permState())
+                }
+            }
+        }
+
+        /** Result comes back through window.__nhlToken(token), empty string on failure. */
+        @JavascriptInterface fun requestFcmToken() {
+            ui.post {
+                try {
+                    FirebaseMessaging.getInstance().token.addOnCompleteListener { t ->
+                        sendToken(if (t.isSuccessful) (t.result ?: "") else "")
+                    }
+                } catch (_: Exception) { sendToken("") }
+            }
+        }
     }
 
     private lateinit var web: WebView
@@ -55,12 +101,40 @@ class MainActivity : AppCompatActivity() {
     private var lastCheck = 0L
     private var updateDialogShown = false
     private var failedLoad = false
+    private val prefs by lazy { getSharedPreferences("nhl28", MODE_PRIVATE) }
+
+    private val permLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        prefs.edit().putBoolean("asked", true).apply()
+        sendPerm(if (granted) "granted" else "denied")
+    }
+
+    private fun sendPerm(v: String) {
+        web.evaluateJavascript("window.__nhlPermResult&&window.__nhlPermResult('$v')", null)
+    }
+
+    private fun sendToken(v: String) {
+        web.evaluateJavascript("window.__nhlToken&&window.__nhlToken(${JSONObject.quote(v)})", null)
+    }
+
+    private fun permState(): String {
+        if (Build.VERSION.SDK_INT < 33) {
+            return if (NotificationManagerCompat.from(this).areNotificationsEnabled()) "granted" else "denied"
+        }
+        val ok = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        return if (ok) "granted" else if (prefs.getBoolean("asked", false)) "denied" else "default"
+    }
+
+    private fun createChannel() {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel("nhl28_reminders", "Pripomienky a chat", NotificationManager.IMPORTANCE_HIGH))
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         web = findViewById(R.id.web)
+        createChannel()
 
         web.setBackgroundColor(0xFF1D1B19.toInt())
         CookieManager.getInstance().setAcceptCookie(true)
