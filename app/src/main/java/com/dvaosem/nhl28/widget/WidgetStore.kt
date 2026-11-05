@@ -49,8 +49,22 @@ object WidgetStore {
             val g = gs.getJSONObject(i)
             pend[g.optString("id")]?.let { g.put("pick", it) }
         }
-        sp(c).edit().putString("data", o.toString()).apply()
+        val e = sp(c).edit().putString("data", o.toString())
+        o.optJSONObject("theme")?.let { e.putString("theme", it.toString()) }
+        e.apply()
     }
+
+    /** Generic payloads (results, board, chat): {theme:{...}, ...}. */
+    @Synchronized
+    fun putKind(c: Context, kind: String, json: String) {
+        val o = JSONObject(json)
+        val e = sp(c).edit().putString("kind_$kind", json)
+        o.optJSONObject("theme")?.let { e.putString("theme", it.toString()) }
+        e.apply()
+    }
+
+    fun kind(c: Context, kind: String): JSONObject? =
+        try { sp(c).getString("kind_$kind", null)?.let { JSONObject(it) } } catch (_: Exception) { null }
 
     private fun data(c: Context): JSONObject? =
         try { sp(c).getString("data", null)?.let { JSONObject(it) } } catch (_: Exception) { null }
@@ -75,7 +89,8 @@ object WidgetStore {
     fun label(c: Context): String = data(c)?.optString("label").orEmpty()
 
     fun theme(c: Context): Theme {
-        val t = data(c)?.optJSONObject("theme")
+        val t = try { sp(c).getString("theme", null)?.let { JSONObject(it) } } catch (_: Exception) { null }
+            ?: data(c)?.optJSONObject("theme")
         return Theme(
             color(t, "bg", Color.rgb(38, 37, 34)),
             color(t, "card", Color.rgb(48, 46, 43)),

@@ -30,6 +30,9 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import com.dvaosem.nhl28.R
+import com.dvaosem.nhl28.widget.BoardWidget
+import com.dvaosem.nhl28.widget.ChatWidget
+import com.dvaosem.nhl28.widget.ResultsWidget
 import com.dvaosem.nhl28.widget.TipsWidget
 import com.dvaosem.nhl28.widget.WidgetStore
 import com.google.firebase.FirebaseApp
@@ -67,6 +70,18 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface fun saveGames(json: String) {
             try { WidgetStore.saveData(applicationContext, json); TipsWidget.refreshAll(applicationContext) } catch (_: Exception) {}
         }
+        /** Generic widget data: kind = "results" | "board" | "chat". */
+        @JavascriptInterface fun saveWidgetData(kind: String, json: String) {
+            try {
+                WidgetStore.putKind(applicationContext, kind, json)
+                when (kind) {
+                    "results" -> ResultsWidget.refreshAll(applicationContext)
+                    "chat" -> ChatWidget.refreshAll(applicationContext)
+                    "board" -> BoardWidget.refreshAll(applicationContext)
+                }
+            } catch (_: Exception) {}
+        }
+
         @JavascriptInterface fun getPendingTips(): String = WidgetStore.pendingJson(applicationContext)
         @JavascriptInterface fun clearPendingTips(idsJson: String) {
             try { WidgetStore.clearPending(applicationContext, idsJson); TipsWidget.refreshAll(applicationContext) } catch (_: Exception) {}
@@ -215,7 +230,16 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        if (savedInstanceState != null) web.restoreState(savedInstanceState) else web.loadUrl(START_URL)
+        if (savedInstanceState != null) web.restoreState(savedInstanceState)
+        else web.loadUrl(if (intent?.getStringExtra("open") == "chat") START_URL + "#chat" else START_URL)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getStringExtra("open") == "chat") {
+            web.evaluateJavascript("(function(){var t=document.getElementById('tab-chat');if(t&&!t.hidden)t.click();})()", null)
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

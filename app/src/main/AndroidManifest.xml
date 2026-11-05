@@ -55,6 +55,49 @@
             android:exported="false"/>
 
         <receiver
+            android:name=".widget.ResultsWidget"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_results"/>
+        </receiver>
+
+        <receiver
+            android:name=".widget.ChatWidget"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_chat"/>
+        </receiver>
+
+        <receiver
+            android:name=".widget.BoardWidget"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_board"/>
+        </receiver>
+
+        <service
+            android:name=".widget.ResultsService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false"/>
+
+        <service
+            android:name=".widget.ChatService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false"/>
+
+        <receiver
             android:name=".ui.InstallResultReceiver"
             android:exported="false"/>
 
