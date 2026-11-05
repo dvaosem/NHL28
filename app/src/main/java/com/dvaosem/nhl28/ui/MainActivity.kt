@@ -8,6 +8,7 @@ import android.app.ProgressDialog
 import android.content.Intent
 import android.graphics.Bitmap
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -29,6 +30,8 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import com.dvaosem.nhl28.R
+import com.dvaosem.nhl28.widget.TipsWidget
+import com.dvaosem.nhl28.widget.WidgetStore
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import org.json.JSONObject
@@ -59,6 +62,27 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface fun checkUpdate() { ui.post { checkForUpdate(true) } }
         /** The page's own update bar calls this; the GitHub check handles the actual download. */
         @JavascriptInterface fun update(url: String) { ui.post { checkForUpdate(true) } }
+
+        // --- tipping widget: the page pushes games, the widget queues tips, the page sends them ---
+        @JavascriptInterface fun saveGames(json: String) {
+            try { WidgetStore.saveData(applicationContext, json); TipsWidget.refreshAll(applicationContext) } catch (_: Exception) {}
+        }
+        @JavascriptInterface fun getPendingTips(): String = WidgetStore.pendingJson(applicationContext)
+        @JavascriptInterface fun clearPendingTips(idsJson: String) {
+            try { WidgetStore.clearPending(applicationContext, idsJson); TipsWidget.refreshAll(applicationContext) } catch (_: Exception) {}
+        }
+
+        /** Keeps the status/navigation bars in the page's theme color. */
+        @JavascriptInterface fun setBarColor(hex: String) {
+            ui.post {
+                try {
+                    val c = Color.parseColor(hex)
+                    window.statusBarColor = c
+                    window.navigationBarColor = c
+                    web.setBackgroundColor(c)
+                } catch (_: Exception) {}
+            }
+        }
 
         // --- native push (the page uses these instead of web push) ---
         @JavascriptInterface fun pushAvailable(): Boolean =

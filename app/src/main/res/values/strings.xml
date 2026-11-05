@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">NHL28</string>
+    <string name="w_desc">Zápasy dňa: ťukni na tím a natipuj</string>
+    <string name="w_empty">Otvor NHL28, načítam zápasy</string>
 </resources>
