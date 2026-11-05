@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -32,6 +33,21 @@ class MainActivity : AppCompatActivity() {
         const val START_URL = "https://dvaosem.com/nhl/"
         private const val CHECK_INTERVAL_MS = 30 * 60 * 1000L
         private val HOSTS = setOf("dvaosem.com", "www.dvaosem.com")
+
+        // WebView quirk: fixed bars with backdrop-filter can vanish while scrolling, so drop the blur in the app.
+        private const val FIX_JS = "(function(){if(document.getElementById('nhl28-app-fix'))return;" +
+            "var s=document.createElement('style');s.id='nhl28-app-fix';" +
+            "s.textContent='nav.tabbar,header{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}" +
+            "nav.tabbar{transform:translateZ(0)}';document.head.appendChild(s);})();"
+    }
+
+    /** Called from the web app (window.NHL28App). */
+    inner class AppBridge {
+        @JavascriptInterface fun versionName(): String = packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+        @JavascriptInterface fun versionCode(): Int = UpdateManager.currentBuild(this@MainActivity)
+        @JavascriptInterface fun checkUpdate() { ui.post { checkForUpdate(true) } }
+        /** The page's own update bar calls this; the GitHub check handles the actual download. */
+        @JavascriptInterface fun update(url: String) { ui.post { checkForUpdate(true) } }
     }
 
     private lateinit var web: WebView
@@ -60,7 +76,10 @@ class MainActivity : AppCompatActivity() {
             setSupportMultipleWindows(false)
             cacheMode = WebSettings.LOAD_DEFAULT
             userAgentString = userAgentString + " NHL28App"
+            // ignore the system font scale: the page has its own text-size setting
+            textZoom = 100
         }
+        web.addJavascriptInterface(AppBridge(), "NHL28App")
 
         web.webChromeClient = WebChromeClient()
         web.webViewClient = object : WebViewClient() {
@@ -78,6 +97,10 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 failedLoad = false
+            }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                if (url.startsWith(START_URL.substringBeforeLast("/nhl/"))) view.evaluateJavascript(FIX_JS, null)
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
@@ -127,13 +150,20 @@ class MainActivity : AppCompatActivity() {
         "<h2>No connection</h2><p style='color:#a39b91'>NHL28 needs internet.</p>" +
         "<p><a href='$START_URL' style='color:#d97757'>Try again</a></p></body></html>"
 
-    private fun checkForUpdate() {
+    private fun checkForUpdate(manual: Boolean = false) {
         val now = System.currentTimeMillis()
-        if (updateDialogShown || now - lastCheck < CHECK_INTERVAL_MS) return
+        if (updateDialogShown) return
+        if (!manual && now - lastCheck < CHECK_INTERVAL_MS) return
         lastCheck = now
         Thread {
-            val rel = UpdateManager.latest() ?: return@Thread
-            if (rel.build > UpdateManager.currentBuild(this)) ui.post { offerUpdate(rel) }
+            val rel = UpdateManager.latest()
+            ui.post {
+                when {
+                    rel == null -> if (manual) Toast.makeText(this, "Cannot reach GitHub", Toast.LENGTH_SHORT).show()
+                    rel.build > UpdateManager.currentBuild(this) -> offerUpdate(rel)
+                    manual -> Toast.makeText(this, "You have the latest version", Toast.LENGTH_SHORT).show()
+                }
+            }
         }.start()
     }
 
